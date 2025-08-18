@@ -18,6 +18,7 @@
  GRANT EXECUTE ON FUNCTION pg_catalog.txid_snapshot_xmax(txid_snapshot) TO backup;
  GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_checkpoint() TO backup;
  COMMIT;
+ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 
 # Postgres Pro 15 or new
  BEGIN;
@@ -36,7 +37,7 @@
  GRANT EXECUTE ON FUNCTION pg_catalog.txid_snapshot_xmax(txid_snapshot) TO backup;
  GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_checkpoint() TO backup;
  COMMIT;
-
+ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 
 
 # setting up pg_probackup
@@ -76,5 +77,48 @@
 
 
 
+# update file .pgpass
+cat <<EOF | sudo tee /u01/postgres/.pgpass
+localhost:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
+localhost:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+localhost:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+EOF
+
+
+
+# update file 'pg_hba.conf' add a user backup
+cat <<EOF | sudo tee /u01/postgres/std-15/conf/pg_hba.conf
+# PostgreSQL Client Authentication Configuration File
+# (Managed by Ansible)
+
+# TYPE    DATABASE    USER    ADDRESS    METHOD
+
+# cluster
+host    all,replication    patroni    10.0.0.1/32    md5
+host    all,replication    patroni    10.0.0.2/32    md5
+host    all,replication    patroni    10.0.0.3/32    md5
+host    all,replication    patroni    127.0.0.1/32    md5
+host    all,replication    patroni    ::1/128    md5
+
+# backup:
+host    all,replication    backup    10.0.0.1/32    md5
+host    all,replication    backup    10.0.0.2/32    md5
+host    all,replication    backup    10.0.0.3/32    md5
+host    all,replication    backup    127.0.0.1/32    md5
+host    all,replication    backup    ::1/128    md5
+
+# remote users:
+host    all    +user_connect    0.0.0.0/0    md5
+host    all    +app_connect    0.0.0.0/0    md5
+
+# local users:
+local    all    all    peer
+host    all    all    127.0.0.1/32    md5
+host    all    all    ::1/128    md5
+EOF
 
 
