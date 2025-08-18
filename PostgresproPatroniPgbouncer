@@ -1,0 +1,873 @@
+# install postgrespro
+# deb
+apt-get update -y
+apt-get install postgrespro-std-15-client-15 postgrespro-std-15-server-15 postgrespro-std-15-libs-15 postgrespro-std-15-contrib-15 pg-probackup-std-15 pgpro-pwr-std-15 pgpro-pgbadger -y
+# or
+apt-get install *.deb
+# or
+dpkg -i *.deb
+
+# red
+yum update -y
+yum install -y postgrespro-std-15-client-15 postgrespro-std-15-server-15 postgrespro-std-15-libs-15 postgrespro-std-15-contrib-15 pg-probackup-std-15 pgpro-pwr-std-15 pgpro-pgbadger -y
+# or
+yum install *.rpm
+# or
+rpm -i *.rpm
+
+
+# create a directory for the database
+mkdir /u01
+
+# creating the XFS file system
+mkfs.xfs /dev/sdb
+
+# mount a disk in a dictory
+mount /dev/sdb /u01
+
+# specify the mounted disk in fstab
+vim /etc/fstab
+# add to file example
+#  /dev/sdb  /u01  xfs  defaults  0  0
+
+# create a directory
+mkdir /u01/postgres/
+mkdir /u01/postgres/dba/scripts/patroni_callbacks_scripts/
+
+# Setting up the home directory and shell.
+usermod -h /u01/postgres/ postgres
+usermod -s /dev/bash/ postgres
+
+# Configuring kernel settings for managing large pages (hugepages) using sysctl
+# Check whether hugepages is supported on the hardware level.
+cat /sys/kernel/mm/transparent_hugepage/enabled
+
+# [always] madvise never
+# This item indicates whether large transparent pages are enabled.
+
+# Checking the hugepages settings in sysctl or /proc/meminfo
+sysctl -a | grep hugepages
+
+# Include in the file hugepages '/u01/postgres/std-15/conf/postgresql.base.conf'
+# 'postgresql.base.conf'
+# huge_pages = on
+
+# Divide the required amount of memory by the size of one huge page. For example, if you need 4GB of memory and a huge page size of 2MB, then
+# 4 * 1024 * 1024 / 2048 = 2048
+
+cat <<EOF | sudo tee /etc/sysctl.d/55-dba-admins.conf
+vm.nr_hugepages=94218
+EOF
+
+# Update the kernel parameter
+sysctl --system
+
+
+# configure resource limits for the process started by the user ulimit
+cat <<EOF | sudo tee /etc/security/limits.d/99_dba.conf
+* - nproc 8192
+EOF
+
+# check under the postgres user
+ulimit -a | grep 'max user processes'
+
+
+
+# Connecting to the postgres user
+su - postgres
+
+
+
+# Creating a file in the postgres home directory .bashrc and .bash_profile with read-only and write-only permissions
+cat <<EOF | sudo tee /u01/postgres/.bashrc
+# ~/.bashrc
+# The individual per-interactive-shell startup file.
+
+# Source global definitions.
+if [ -r /etc/bashrc ]; then
+        . /etc/bashrc
+fi
+
+# Define user specific aliases and functions.
+export PS1='\[\e]0;\u@\h: \w\a\][\u@\h \W]\$ '
+export PATH=$PATH:~/dba/scripts:/opt/pgpro/std-15/bin
+export EDITOR=vim
+export VISUAL=vim
+export HISTSIZE=1200
+export HISTFILESIZE=1200
+EOF
+
+
+
+
+cat <<EOF | sudo tee /u01/postgres/.bash_profile
+# ~/.bash_profile
+# The personal initialization file, executed for login shells.
+
+# Source the aliases and functions.
+if [ -f ~/.bashrc ]; then
+        . ~/.bashrc
+fi
+
+# Define user specific environment and startup programs.
+
+BASH_ENV=$HOME/.bashrc
+export BASH_ENV
+EOF
+
+
+
+
+# Create Keys
+ssh-keygen -t ed25519
+
+# The created id_ed255119.pub key is added to the authorized_keys file on all nodes.
+# Create the authorized_keys file in the new node, insert the keys of other nodes into it, and check the ssh connection.
+chmod 600 .ssh/authorized_keys
+
+# to call postgresql binary files without specifying the path, we will create the necessary symbolic links.
+/opt/pgpro/std-15/bin/pg-wrapper links update
+
+# Initializing the database
+/opt/pgpro/std-15/bin/initdb --pgdata=/u01/postgres/std-15/pgdata
+
+# Create a 'conf' and 'log' directory
+mkdir -p /u01/postgres/std-15/conf
+mkdir -p /u01/postgres/std-15/log
+mkdir -p /u01/postgres/std-15/audit
+
+
+
+# create files 'pg_hba.conf', 'pg_ident.conf', 'postgresql.conf' and 'postgresql.base.conf'.
+
+# pg_ident.conf
+touch /u01/postgres/std-15/conf/pg_ident.conf
+
+
+
+# pg_hba.conf
+cat <<EOF | sudo tee /u01/postgres/std-15/conf/pg_hba.conf
+# PostgreSQL Client Authentication Configuration File
+# (Managed by Ansible)
+
+# TYPE    DATABASE    USER    ADDRESS    METHOD
+
+# cluster
+host    all,replication    patroni    10.0.0.1/32    md5
+host    all,replication    patroni    10.0.0.2/32    md5
+host    all,replication    patroni    10.0.0.3/32    md5
+host    all,replication    patroni    127.0.0.1/32    md5
+host    all,replication    patroni    ::1/128    md5
+
+# ba ckup:
+host    all,replication    backup    10.0.0.1/32    md5
+host    all,replication    backup    10.0.0.2/32    md5
+host    all,replication    backup    10.0.0.3/32    md5
+host    all,replication    backup    127.0.0.1/32    md5
+host    all,replication    backup    ::1/128    md5
+
+# remote users:
+host    all    +user_connect    0.0.0.0/0    md5
+host    all    +app_connect    0.0.0.0/0    md5
+
+# local users:
+local    all    all    peer
+host    all    all    127.0.0.1/32    md5
+host    all    all    ::1/128    md5
+EOF
+
+
+
+
+# postgresql.conf
+cat <<EOF | sudo tee /u01/postgres/std-15/conf/postgresql.conf
+# Do not edit this file manually!
+# It will be overwritten by Patroni!
+include 'postgresql.base.conf'
+
+cluster_name = 't00node' # cluster_name
+hot_standby = 'on'
+listen_addresses = '127.0.0.1,10.0.0.1' - ip-node
+max_connections = '1000'
+max_locks_per_transaction = '64'
+max_prepared_transactions = '50'
+max_replication_slots = '10'
+max_wal_senders = '10'
+max_worker_processes = '8'
+port = '5432'
+track_commit_timestamp = 'False'
+wal_keep_size = '8GB'
+wal_level = 'replica'
+wal_log_hints = 'on'
+hba_file = '/u01/postgres/std-15/conf/pg_hba.conf'
+ident_file = '/u01/postgres/std-15/conf/pg_ident.conf'
+
+# recovery.conf
+primary_conninfo = 'user=patroni passfile=/u01/postgres/.pgpass_patroni host=10.0.0.2 ip-node-rep port=5432 sslmode=prefer application_name=t00node01.task.locl gssencmode=prefer channel_binding=prefer'
+primary_slot_name = 't00node01_task_locl'
+recovery_target = ''
+recovery_target_lsn = ''
+recovery_target_name = ''
+recovery_target_time = ''
+recovery_target_timeline = 'latest'
+recovery_target_xid = ''
+EOF
+
+
+
+
+# postgresql.base.conf
+cat <<EOF | sudo tee /u01/postgres/std-15/conf/postgresql.base.conf
+# -----------------------------
+# PostgreSQL configuration file
+# -----------------------------
+# (Managed by Ansible)
+#
+# This file consists of lines of the form:
+#
+#   name = value
+#
+# (The "=" is optional.)  Whitespace may be used.  Comments are introduced with
+# "#" anywhere on a line.  The complete list of parameter names and allowed
+# values can be found in the PostgreSQL documentation.
+#
+# The commented-out settings shown in this file represent the default values.
+# Re-commenting a setting is NOT sufficient to revert it to the default value;
+# you need to reload the server.
+#
+# This file is read on server startup and when the server receives a SIGHUP
+# signal.  If you edit the file on a running system, you have to SIGHUP the
+# server for the changes to take effect, run "pg_ctl reload", or execute
+# "SELECT pg_reload_conf()".  Some parameters, which are marked below,
+# require a server shutdown and restart to take effect.
+#
+# Any parameter can also be given as a command-line option to the server, e.g.,
+# "postgres -c log_connections=on".  Some parameters can be changed at run time
+# with the "SET" SQL command.
+#
+# Memory units:  kB = kilobytes        Time units:  ms  = milliseconds
+#                MB = megabytes                     s   = seconds
+#                GB = gigabytes                     min = minutes
+#                TB = terabytes                     h   = hours
+#                                                   d   = days
+
+#------------------------------------------------------------------------------
+# Default
+#------------------------------------------------------------------------------
+
+# CONNECTIONS AND AUTHENTICATION
+
+listen_addresses = '*'
+port = 5432
+max_connections = 100
+
+# RESOURCE USAGE (except WAL)
+
+shared_buffers = 128MB
+work_mem = 16MB
+maintenance_work_mem = 64MB
+autovacuum_work_mem = 32MB
+dynamic_shared_memory_type = posix
+temp_file_limit = 1GB
+shared_preload_libraries = 'pg_stat_statements,pg_proaudit'
+
+# WRITE-AHEAD LOG
+
+wal_level = logical
+fsync = on
+synchronous_commit = on
+checkpoint_timeout = 10min
+max_wal_size = 1GB
+min_wal_size = 80MB
+checkpoint_completion_target = 0.9
+checkpoint_warning = 60s
+archive_mode = on
+archive_command = '/bin/true'
+archive_timeout = 600
+
+# REPLICATION
+
+max_wal_senders = 10
+wal_keep_size = 8GB
+hot_standby = on
+
+# REPORTING AND LOGGING
+
+log_destination = 'stderr,syslog'
+syslog_facility = 'LOCAL0'
+syslog_ident = 'postgres'
+syslog_sequence_numbers = on
+syslog_split_messages = off
+lc_messages = 'en_US.UTF-8'
+logging_collector = on
+log_directory = 'log'
+log_filename = 'postgresql-%Y-%m-%d.log'
+log_file_mode = 0644
+log_truncate_on_rotation = off
+log_rotation_age = 1d
+log_rotation_size = 0
+# log_min_duration_statement = '250'
+log_checkpoints = on
+log_connections = on
+log_disconnections = on
+log_line_prefix = '%t | %a | %u | %d | %r | %i | %e '
+log_lock_waits = on
+log_statement = 'none'
+log_replication_commands = on
+log_temp_files = 0
+log_timezone = 'Europe/Moscow'
+log_duration = off
+log_error_verbosity = default
+log_hostname = on
+log_min_error_statement = info
+log_min_messages = info
+
+# STATISTICS
+
+track_io_timing = on
+
+# AUTOVACUUM
+
+autovacuum = on
+log_autovacuum_min_duration = 60000
+autovacuum_max_workers = 3
+autovacuum_vacuum_scale_factor = 0.01
+autovacuum_analyze_scale_factor = 0.05
+
+# CLIENT CONNECTION DEFAULTS"
+
+datestyle = 'iso, dmy'
+timezone = 'Europe/Moscow'
+lc_messages = 'en_US.UTF-8'
+lc_monetary = 'ru_RU.UTF-8'
+lc_numeric = 'ru_RU.UTF-8'
+lc_time = 'ru_RU.UTF-8'
+default_text_search_config = 'pg_catalog.russian'
+idle_in_transaction_session_timeout = '1min'
+
+# CUSTOMIZED OPTIONS
+
+# pg_stat_statements
+pg_stat_statements.track = 'none'
+pg_stat_statements.max = '10000'
+pg_stat_statements.track_utility = 'off'
+
+# pg_power_config
+
+pgpro_stats.track  = 'all'
+pgpro_stats.max= '10000'
+pgpro_pwr.max = '20'
+pgpro_pwr.max_query_length = '20000'
+pgpro_pwr.max_sample_age='21'
+pgpro_pwr.track_sample_timings = 'off'
+track_counts = 'on'
+track_io_timing = 'on'
+track_wal_io_timing = 'on'
+track_functions = 'all'
+
+#------------------------------------------------------------------------------
+# Customized config
+#------------------------------------------------------------------------------
+
+huge_pages = on
+shared_buffers = 180GB
+work_mem = 512MB
+maintenance_work_mem = 6GB
+autovacuum_work_mem = 6GB
+effective_cache_size = 350GB # 25-40% mem
+checkpoint_timeout = 10min
+autovacuum_max_workers = 6
+max_wal_size = 4GB
+min_wal_size = 1GB
+checkpoint_completion_target = 0.9
+checkpoint_warning = 60s
+timezone = 'UTC'
+shared_preload_libraries = 'pg_stat_statements,pgpro_stats,pg_proaudit'
+temp_file_limit = 100GB
+
+
+#------------------------------------------------------------------------------
+# Deploy
+#------------------------------------------------------------------------------
+
+data_directory = '/u01/postgres/std-15/pgdata'
+hba_file = '/u01/postgres/std-15/conf/pg_hba.conf'
+ident_file = '/u01/postgres/std-15/conf/pg_ident.conf'
+port = 5432
+archive_command = '/opt/pgpro/std-15/bin/pg_probackup archive-push -B /u01/postgres/std-15/recovery --instance 't00node - cluster_name' --wal-file-name=%f --remote-host='t00node01.task.locl node_name' --batch-size=2  --threads=2 '
+log_directory = '/u01/postgres/std-15/log'
+
+# pg_proaudit
+
+pg_proaudit.log_destination = 'csvlog'
+pg_proaudit.log_directory = '/u01/postgres/std-15/audit'
+pg_proaudit.log_filename = 'audit-%u.csv'
+pg_proaudit.log_rotation_age = 1440
+pg_proaudit.log_rotation_size = 0
+pg_proaudit.log_truncate_on_rotation = on
+pg_proaudit.log_command_text = on
+EOF
+
+
+
+
+# Configuring the postgrespro service
+# postgrespro-std-15.service
+
+cat <<EOF | sudo tee /etc/systemd/system/postgrespro-std-15.service
+# It's not recommended to modify this file in-place, because it will be
+# overwritten during package upgrades.  If you want to customize, the
+# best way is to create a file "/etc/systemd/system/postgrespro-10.service",
+# containing
+#       .include /lib/systemd/system/postgrespro-10.service
+#       ...make your changes here...
+# For more info about custom unit files, see
+# http://fedoraproject.org/wiki/Systemd#How_do_I_customize_a_unit_file.2F_add_a_custom_unit_file.3F
+
+# Note: changing PGDATA will typically require adjusting SELinux
+# configuration as well.
+
+# Note: do not use a PGDATA pathname containing spaces, or you will
+# break pg-setup.
+[Unit]
+Description=Postgres Pro std 15 database server
+After=syslog.target
+After=network.target
+
+[Service]
+Type=notify
+
+User=postgres
+Group=postgres
+
+OOMScoreAdjust=-1000
+Environment=PG_OOM_ADJUST_FILE=/proc/self/oom_score_adj
+Environment=PG_OOM_ADJUST_VALUE=0
+Environment=PATH=/opt/pgpro/std-15/bin:/usr/sbin:/usr/bin:/bin:/sbin
+# Location of database directory
+# EnvironmentFile=/etc/default/postgrespro-std-15
+Environment=PGDATA=/u01/postgres/std-15/pgdata
+Environment=PGCONF=/u01/postgres/std-15/conf/postgresql.conf
+
+# Where to send early-startup messages from the server (before the logging
+# options of postgresql.conf take effect)
+# This is normally controlled by the global default set by systemd
+# StandardOutput=syslog
+
+# Disable OOM kill on the postmaster
+ExecStartPre=/opt/pgpro/std-15/bin/check-db-dir ${PGDATA}
+ExecStart=/opt/pgpro/std-15/bin/postgres -D ${PGDATA} -c config_file=${PGCONF}
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGINT
+
+# Give a reasonable amount of time for the server to start up/shut down
+TimeoutSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+# assign the owner of the directory postgres
+chown -R postgres. /u01/postgres/
+
+# assign rights to files in a directory 'conf'
+chmod 644 /u01/postgres/std-15/conf/*
+
+# Update unit configurations for all services with the command.
+systemctl daemon_reload
+
+
+
+
+
+
+
+#  install patroni
+apt-get install patroni
+# or
+yum install patroni
+
+# Creating a file 'patroni.yml'
+cat <<EOF | sudo tee /u01/postgres/std-15/conf/patroni.yml
+scope: t00node # cluster_name
+namespace: /postgresql/
+name: t00node01.task.locl # node_name
+
+restapi:
+  listen: 10.0.0.1:8008
+  connect_address: 10.0.0.1:8008
+  authentication:
+    username: t00node # cluster_name
+    password: lKKdJJdw3282191cno
+
+etcd:
+  hosts:
+    - 10.0.0.11:2379
+    - 10.0.0.12:2379
+    - 10.0.0.13:2379
+  username: t00node # cluster_name
+  password: sdjsDDjJdadsaJJw21M
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    master_start_timeout: 300
+    synchronous_mode: True
+
+    # standby_cluster:
+      # host: 127.0.0.1
+      # port: 1111
+      # primary_slot_name: patroni
+
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        max_connections: 1000
+        wal_level: replica
+        hot_standby: on
+        max_wal_senders: 10
+        max_prepared_transactions: 50
+        max_locks_per_transaction: 64
+        track_commit_timestamp: off
+        max_replication_slots: 10
+        max_worker_processes: 8
+        wal_log_hints: on
+        wal_keep_size: 8GB
+
+      # recovery_conf:
+      #   restore_command: cp ../wal_archive/%f %p
+    slots:
+      standbyslot:
+      database: postgres
+      type: physical
+  initdb:
+    - encoding: UTF8
+    - locale: ru_RU.UTF8
+    - data-checksums
+
+postgresql:
+  listen: 127.0.0.1,10.0.0.1:5432
+  connect_address: 10.0.0.1:5432
+  data_dir: /u01/postgres/std-15/pgdata
+  bin_dir: /opt/pgpro/std-15/bin
+  config_dir: /u01/postgres/std-15/conf
+  pgpass: /u01/postgres/.pgpass_patroni
+  callbacks:
+    on_role_change: '/u01/postgres/dba/scripts/patroni_callbacks_scripts/callback_pgbouncer.py'
+    on_start: '/u01/postgres/dba/scripts/patroni_callbacks_scripts/callback_pgbouncer.py'
+  authentication:
+    superuser:
+      username: patroni
+      password: VdlwIme388nvJsk8lLfnu223f # password patroni
+    replication:
+      username: patroni
+      password: VdlwIme388nvJsk8lLfnu223f
+    rewind:
+      username: patroni
+      password: VdlwIme388nvJsk8lLfnu223f
+  # Server side kerberos spn
+  # krbsrvname: postgres
+
+  parameters:
+
+  create_replica_method:
+    - basebackup
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false
+
+log:
+  dir: /u01/postgres/std-15/log
+  level: INFO
+  file_num: 5
+  file_size: 25165824
+EOF
+
+
+# create file for 'callback_pgbouncer.py'
+cat <<EOF | sudo tee /u01/postgres/dba/scripts/patroni_callbacks_scripts/callback_pgbouncer.py
+#!/usr/bin/env python3
+
+import logging
+import subprocess
+
+logger = logging.getLogger('SWITCH-DEBUG')
+logger.setLevel(logging.INFO)
+logging.basicConfig(filename='/u01/postgres/std-15/log/patroni.log',format='%(asctime)s %(levelname)s: %(name)s: %(message)s')
+
+def main():
+    subprocess.run(["psql -h localhost -U pgbouncer -p 6432 -c 'reconnect;'"], shell=True)
+    logger.info('SEND PGBOUNCER RECONNECT')
+
+if __name__ == '__main__':
+    main()
+EOF
+
+# create file .pgpass
+cat <<EOF | sudo tee /u01/postgres/.pgpass
+localhost:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
+localhost:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+localhost:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+EOF
+
+# create a '.pgpass_patroni' file on the t00node01 node and specify the ip address of the t00node02 node
+cat <<EOF | sudo tee /u01/postgres/.pgpass_patroni
+10.0.0.2:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
+EOF
+
+# create a '.pgpass_patroni' file on the t00node02 node and specify the ip address of the t00node01 node
+cat <<EOF | sudo tee /u01/postgres/.pgpass_patroni
+10.0.0.1:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
+EOF
+
+# assign the owner of the directory postgres
+chown -R postgres. /u01/postgres/
+
+# assign rights to file in a directory 'conf' 'patroni.yml'
+chmod 600 /u01/postgres/std-15/conf/patroni.yml
+
+# assign rights to file '.pgpass' and '.pgpass_patroni'
+chmod 600 /u01/postgres/.pgpass
+chmod 600 /u01/postgres/.pgpass_patroni
+
+
+# Creating the patroni service
+cat <<EOF | sudo tee /etc/systemd/system/patroni.service
+# It's not recommended to modify this file in-place, because it will be
+# overwritten during package upgrades.  It is recommended to use systemd
+# "dropin" feature;  i.e. create file with suffix .conf under
+# /etc/systemd/system/patroni.service.d directory overriding the
+# unit's defaults. You can also use "systemctl edit patroni"
+# Look at systemd.unit(5) manual page for more info.
+
+[Unit]
+Description=Runners to orchestrate a high-availability PostgreSQL
+After=syslog.target network.target
+
+[Service]
+Type=simple
+
+User=postgres
+Group=postgres
+
+# Read in configuration file if it exists, otherwise proceed
+# EnvironmentFile=-/etc/patroni_env.conf
+
+# WorkingDirectory=~
+
+# Where to send early-startup messages from the server
+# This is normally controlled by the global default set by systemd
+#StandardOutput=syslog
+
+# Pre-commands to start watchdog device
+# Uncomment if watchdog is part of your patroni setup
+#ExecStartPre=-/usr/bin/sudo /sbin/modprobe softdog
+#ExecStartPre=-/usr/bin/sudo /bin/chown postgres /dev/watchdog
+
+# Start the patroni process
+ExecStart=/usr/bin/patroni /u01/postgres/std-15/conf/patroni.yml
+
+# Send HUP to reload from patroni.yml
+ExecReload=/usr/bin/kill -s HUP $MAINPID
+
+# only kill the patroni process, not it's children, so it will gracefully stop postgres
+KillMode=process
+
+# Give a reasonable amount of time for the server to start up/shut down
+TimeoutSec=30
+
+# Do not restart the service if it crashes, we want to manually inspect database on failure
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+# Update unit configurations for all services with the command.
+systemctl daemon_reload
+
+
+
+
+# install pgbouncer 
+apt-get install pgbouncer
+# or
+yun install pgbouncer
+
+
+
+
+
+# create a 'pgbouncer.1.ini' file
+cat <<EOF | sudo tee /etc/pgboincer/pgbouncer.1.ini
+;;;
+;;; PgBouncer configuration file (Managed by Ansible)
+;;;
+
+;; database name = connect string
+;;
+;; connect string params:
+;;   dbname= host= port= user= password= auth_user=
+;;   client_encoding= datestyle= timezone=
+;;   pool_size= reserve_pool= max_db_connections=
+;;   pool_mode= connect_query= application_name=
+[databases]
+
+postgres = host=127.0.0.1 port=5432 dbname=postgres
+db_name1 = host=127.0.0.1 port=5432 dbname=db_name1
+db_name2 = host=127.0.0.1 port=5432 dbname=db_name2
+db_name3 = host=127.0.0.1 port=5432 dbname=db_name3
+db_name4 = host=127.0.0.1 port=5432 dbname=db_name4
+db_name5 = host=127.0.0.1 port=5432 dbname=db_name5
+db_name6 = host=127.0.0.1 port=5432 dbname=db_name6
+
+
+[peers]
+1 = host=/tmp/pgbouncer1
+2 = host=/tmp/pgbouncer2
+
+;; Configuration section
+[pgbouncer]
+
+;; Default
+
+logfile = /var/log/pgbouncer/pgbouncer.log
+pidfile = /var/run/pgbouncer/pgbouncer.pid
+listen_addr = *
+listen_port = 6432
+auth_type = hba
+auth_file = /etc/pgbouncer/userlist.txt
+auth_hba_file = /etc/pgbouncer/pgbouncer_hba.conf
+admin_users = pgbouncer
+stats_users = pgbouncer
+pool_mode = session
+server_reset_query = DISCARD ALL
+ignore_startup_parameters = extra_float_digits
+max_client_conn = 20000
+default_pool_size = 500
+log_connections = 1
+log_disconnections = 1
+log_pooler_errors = 1
+stats_period = 60
+verbose = 0
+
+;; Customized
+
+max_client_conn = 20000
+max_db_connections = 0
+default_pool_size = 500
+ignore_startup_parameters = search_path,extra_float_digits
+idle_transaction_timeout = 660000
+
+;; Preset by ansible
+
+logfile = /var/log/pgbouncer/pgbouncer.1.log
+pidfile = /var/run/pgbouncer/pgbouncer.1.pid
+so_reuseport = 1
+unix_socket_dir = /tmp/pgbouncer1
+unix_socket_mode = 0777
+peer_id = 1
+EOF
+
+
+
+# create a 'userlist.txt'
+cat <<EOF | sudo tee /etc/pgboincer/userlist.txt
+"user_name1" "passwd1"
+"user_name2" "passwd2"
+"user_name3" "passwd3"
+"user_name4" "passwd4"
+"user_name5" "passwd5"
+"user_name6" "passwd6"
+EOF
+
+
+
+# Grant permissions for directories
+chown -R postgres. /var/log/pgbouncer/
+chown -R postgres. /var/run/pgbouncer/
+chown -R postgres. /etc/pgbouncer/
+mkdir /tmp/pgbouncer1
+chown -R postgres. /tmp/pgbouncer1
+
+
+
+cat <<EOF | sudo tee /etc/pgbouncer/pgbouncer_hba.conf
+# Managed by Ansible
+
+# PostgreSQL Client Authentication Configuration File
+# ===================================================
+
+# TYPE DATABASE USER ADDRESS METHOD
+
+local pgbouncer pgbouncer trust
+host pgbouncer pgbouncer 127.0.0.1/32 trust
+host pgbouncer pgbouncer ::1/128 trust
+
+host    all    all    10.0.0.1/32    md5
+host    all    all    10.0.0.2/32    md5
+host all all 0.0.0.0/0 md5
+
+host all all 127.0.0.1/32 md5
+host all all ::1/128 md5
+EOF
+
+
+
+
+
+# create 'pgbouncer.1.service'
+cat <<EOF | sudo tee /lib/systemd/system/pgbouncer.1.service
+#
+# Managed by ansible
+#
+
+[Unit]
+Description=A lightweight connection pooler for PostgreSQL
+After=syslog.target
+After=network.target
+
+[Service]
+Type=forking
+LimitNOFILE=65535
+
+User=postgres
+Group=postgres
+
+# Path to the init file
+Environment=BOUNCERCONF=/etc/pgbouncer/pgbouncer.1.ini
+
+PIDFile=/var/run/pgbouncer/pgbouncer.1.pid
+
+# Where to send early-startup messages from the server
+# This is normally controlled by the global default set by systemd
+# StandardOutput=syslog
+
+ExecStart=/usr/sbin/pgbouncer -d -q ${BOUNCERCONF}
+ExecReload=/usr/bin/kill -HUP $MAINPID
+KillSignal=SIGINT
+
+# Give a reasonable amount of time for the server to start up/shut down
+TimeoutSec=300
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+
+# Update unit configurations for all services with the command.
+systemctl daemon_reload
