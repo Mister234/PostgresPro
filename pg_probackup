@@ -1,0 +1,80 @@
+# To perform backups, the backup role must have the following permissions on
+# the Postgres Pro server
+
+# Postgres Pro 11 — 14
+ BEGIN;
+ CREATE ROLE backup WITH LOGIN;
+ GRANT USAGE ON SCHEMA pg_catalog TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.current_setting(text) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_is_in_recovery() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_start_backup(text, boolean, boolean) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_stop_backup(boolean, boolean) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_create_restore_point(text) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_switch_wal() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_last_wal_replay_lsn() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.txid_current() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.txid_current_snapshot() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.txid_snapshot_xmax(txid_snapshot) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_checkpoint() TO backup;
+ COMMIT;
+
+# Postgres Pro 15 or new
+ BEGIN;
+ CREATE ROLE backup WITH LOGIN;
+ GRANT USAGE ON SCHEMA pg_catalog TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.current_setting(text) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_is_in_recovery() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_backup_start(text, boolean) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_backup_stop(boolean) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_create_restore_point(text) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_switch_wal() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_last_wal_replay_lsn() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.txid_current() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.txid_current_snapshot() TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.txid_snapshot_xmax(txid_snapshot) TO backup;
+ GRANT EXECUTE ON FUNCTION pg_catalog.pg_control_checkpoint() TO backup;
+ COMMIT;
+
+
+
+# setting up pg_probackup
+
+# Initialize the backup directory 
+/opt/pgpro/std-15/bin/pg_probackup init -B /u01/postgres/std-15/recovery
+
+# add an instance named t00node to the backup directory
+/opt/pgpro/std-15/bin/pg_probackup add-instance -B /u01/postgres/std-15/recovery \
+-D /u01/postgres/std-15/pgdata \
+--instance t00node \
+--remote-host=t00node01.task.locl \
+--remote-user=postgres \
+--remote-port=22 \
+--pguser=backup \
+--retention-redundancy=2 \
+--retention-window=7 \
+--wal-depth=3
+
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
+--instance t00node \
+--compress-algorithm=zlib \
+--compress-level=2 \
+--remote-host=t00node01.task.locl \
+--remote-port=22 \
+--remote-user=postgres
+
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
+--instance t00node \
+--archive-timeout=10min 
+
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
+--instance t00node \
+--pgport=5432
+
+/opt/pgpro/std-15/bin/pg_probackup show-config -B /u01/postgres/std-15/recovery --instance t00node
+
+
+
+
+
