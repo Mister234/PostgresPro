@@ -16,13 +16,28 @@ yum install *.rpm
 rpm -i *.rpm
 
 
-su - postgres
+sudo su - postgres
 
-# update file .pgpass
+# update file .pgpass for node 't00node01'
 cat <<EOF | sudo tee /u01/postgres/.pgpass
 localhost:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
 localhost:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
 localhost:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00backup01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00backup01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+EOF
+
+
+# update file .pgpass for node 't00backup01'
+cat <<EOF | sudo tee /var/lib/pgsql/.pgpass
+localhost:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+localhost:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00backup01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00backup01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
 t00node01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
 t00node02.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
 t00node01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
@@ -90,14 +105,14 @@ EOF
 
 
 # create directory '/prx/t00node01'
-mkdir -p /prx/t00node
+mkdir -p /prx/t00node01
 
 # assign a user and a group to a directory
 chown -R postgres. /prx/t00node01
 
 
 # Create Keys
-su - postgres
+sudo su - postgres
 ssh-keygen -t ed25519
 
 # The created id_ed255119.pub key is added to the authorized_keys file on all nodes. 't00node01, t00node02 and t00backup01'
@@ -150,12 +165,13 @@ ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 
 
 # setting up pg_probackup
+sudo su - postgres
 
 # Initialize the backup directory 
-/opt/pgpro/std-15/bin/pg_probackup init -B /prx/t00node01
+/opt/pgpro/std-15/bin/pg_probackup init -B /prx/t00node01/recovery
 
 # add an instance named t00node to the backup directory
-/opt/pgpro/std-15/bin/pg_probackup add-instance -B /prx/t00node01 \
+/opt/pgpro/std-15/bin/pg_probackup add-instance -B /prx/t00node01/recovery \
 -D /u01/postgres/std-15/pgdata \
 --instance t00backup_master \
 --remote-host=t00node01.task.locl \
@@ -166,9 +182,7 @@ ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 --retention-window=7 \
 --wal-depth=3
 
-instance t00backup_master --wal-file-name=%f --remote-host=t00node01.task.locl
-
-/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01 \
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01/recovery \
 --instance t00backup_master \
 --compress-algorithm=zlib \
 --compress-level=2 \
@@ -177,15 +191,15 @@ instance t00backup_master --wal-file-name=%f --remote-host=t00node01.task.locl
 --remote-user=postgres \
 --remote-path=/opt/pgpro/std-15/bin/
 
-/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01 \
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01/recovery \
 --instance t00backup_master \
 --archive-timeout=10min 
 
-/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01 \
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01/recovery \
 --instance t00backup_master \
 --pgport=5432
 
-/opt/pgpro/std-15/bin/pg_probackup show-config -B /prx/t00node01 --instance t00backup_master
+/opt/pgpro/std-15/bin/pg_probackup show-config -B /prx/t00node01/recovery --instance t00backup_master
 
 
 
