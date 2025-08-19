@@ -1,5 +1,114 @@
+# install postgrespro
+# deb
+apt-get update -y
+apt-get install postgrespro-std-15-client-15 postgrespro-std-15-server-15 postgrespro-std-15-libs-15 postgrespro-std-15-contrib-15 pg-probackup-std-15 pgpro-pwr-std-15 pgpro-pgbadger -y
+# or
+apt-get install *.deb
+# or
+dpkg -i *.deb
+
+# red
+yum update -y
+yum install -y postgrespro-std-15-client-15 postgrespro-std-15-server-15 postgrespro-std-15-libs-15 postgrespro-std-15-contrib-15 pg-probackup-std-15 pgpro-pwr-std-15 pgpro-pgbadger -y
+# or
+yum install *.rpm
+# or
+rpm -i *.rpm
+
+
+su - postgres
+
+# update file .pgpass
+cat <<EOF | sudo tee /u01/postgres/.pgpass
+localhost:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
+localhost:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+localhost:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+t00node02.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
+EOF
+
+
+
+# update file 'pg_hba.conf' for node 't00node01' add a user 'backup'
+cat <<EOF | sudo tee /u01/postgres/std-15/conf/pg_hba.conf
+# PostgreSQL Client Authentication Configuration File
+# (Managed by Ansible)
+
+# TYPE    DATABASE    USER    ADDRESS    METHOD
+
+# cluster
+host    all,replication    patroni    10.0.0.1/32    md5
+host    all,replication    patroni    10.0.0.2/32    md5
+host    all,replication    patroni    10.0.0.3/32    md5
+host    all,replication    patroni    127.0.0.1/32    md5
+host    all,replication    patroni    ::1/128    md5
+
+# backup:
+host    all,replication    backup    10.0.0.11/32    md5
+host    all,replication    backup    10.0.0.1/32    md5
+host    all,replication    backup    10.0.0.2/32    md5
+host    all,replication    backup    10.0.0.3/32    md5
+host    all,replication    backup    127.0.0.1/32    md5
+host    all,replication    backup    ::1/128    md5
+
+# remote users:
+host    all    +user_connect    0.0.0.0/0    md5
+host    all    +app_connect    0.0.0.0/0    md5
+
+# local users:
+local    all    all    peer
+host    all    all    127.0.0.1/32    md5
+host    all    all    ::1/128    md5
+EOF
+
+
+# update file 'pg_hba.conf' for node 't00backup01'
+cat <<EOF | sudo tee /var/lib/pgpro/std-15/data/pg_hba.conf
+# PostgreSQL Client Authentication Configuration File
+# (Managed by Ansible)
+# TYPE    DATABASE    USER    ADDRESS    METHOD
+# backup:
+host    all,replication    backup    10.0.0.11/32    md5
+host    all,replication    backup    10.0.0.1/32    md5
+host    all,replication    backup    10.0.0.2/32    md5
+host    all,replication    backup    10.0.0.3/32    md5
+host    all,replication    backup    127.0.0.1/32    md5
+host    all,replication    backup    ::1/128    md5
+
+# remote users:
+host    all    +user_connect    0.0.0.0/0    md5
+host    all    +app_connect    0.0.0.0/0    md5
+
+# local users:
+local    all    all    peer
+host    all    all    127.0.0.1/32    md5
+host    all    all    ::1/128    md5
+EOF
+
+
+
+# create directory '/prx/t00node01'
+mkdir -p /prx/t00node
+
+# assign a user and a group to a directory
+chown -R postgres. /prx/t00node01
+
+
+# Create Keys
+su - postgres
+ssh-keygen -t ed25519
+
+# The created id_ed255119.pub key is added to the authorized_keys file on all nodes. 't00node01, t00node02 and t00backup01'
+# Create the authorized_keys file in the new node, insert the keys of other nodes into it, and check the ssh connection.
+chmod 600 .ssh/authorized_keys
+
+
 # To perform backups, the backup role must have the following permissions on
 # the Postgres Pro server
+
+psql
 
 # Postgres Pro 11 — 14
  BEGIN;
@@ -43,13 +152,13 @@ ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 # setting up pg_probackup
 
 # Initialize the backup directory 
-/opt/pgpro/std-15/bin/pg_probackup init -B /u01/postgres/std-15/recovery
+/opt/pgpro/std-15/bin/pg_probackup init -B /prx/t00node01
 
 # add an instance named t00node to the backup directory
-/opt/pgpro/std-15/bin/pg_probackup add-instance -B /u01/postgres/std-15/recovery \
+/opt/pgpro/std-15/bin/pg_probackup add-instance -B /prx/t00node01 \
 -D /u01/postgres/std-15/pgdata \
 --instance t00backup_master \
---remote-host=t00backup_master01.task.locl \
+--remote-host=t00node01.task.locl \
 --remote-user=postgres \
 --remote-port=22 \
 --pguser=backup \
@@ -57,72 +166,45 @@ ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 --retention-window=7 \
 --wal-depth=3
 
-instance t00backup_master --wal-file-name=%f --remote-host=t00backup_master01.task.locl
+instance t00backup_master --wal-file-name=%f --remote-host=t00node01.task.locl
 
-/opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01 \
 --instance t00backup_master \
 --compress-algorithm=zlib \
 --compress-level=2 \
---remote-host=t00backup_master01.task.locl \
+--remote-host=t00node01.task.locl \
 --remote-port=22 \
---remote-user=postgres
+--remote-user=postgres \
+--remote-path=/opt/pgpro/std-15/bin/
 
-/opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01 \
 --instance t00backup_master \
 --archive-timeout=10min 
 
-/opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
+/opt/pgpro/std-15/bin/pg_probackup set-config -B /prx/t00node01 \
 --instance t00backup_master \
 --pgport=5432
 
-/opt/pgpro/std-15/bin/pg_probackup show-config -B /u01/postgres/std-15/recovery --instance t00backup_master
+/opt/pgpro/std-15/bin/pg_probackup show-config -B /prx/t00node01 --instance t00backup_master
 
 
 
-# update file .pgpass
-cat <<EOF | sudo tee /u01/postgres/.pgpass
-localhost:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
-localhost:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
-localhost:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
-t00node01.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
-t00node02.task.locl:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
-t00node01.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
-t00node02.task.locl:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
-EOF
 
 
 
-# update file 'pg_hba.conf' add a user backup
-cat <<EOF | sudo tee /u01/postgres/std-15/conf/pg_hba.conf
-# PostgreSQL Client Authentication Configuration File
-# (Managed by Ansible)
+# For Postgres Pro version 11 or later
+# Create the PTRACK extension in the database
+CREATE EXTENSION ptrack;
 
-# TYPE    DATABASE    USER    ADDRESS    METHOD
+# configure PTRACK in the 't00node01' cluster node file in the 'postgresql.base.conf' file in the module, configure 'shared_preload_libraries' and 'ptrack.map_size' for 't00backup01' and 
+shared_preload_libraries = 'pg_stat_statements, pgpro_stats,pg_proaudit,ptrack'
+ptrack.map_size = 10
 
-# cluster
-host    all,replication    patroni    10.0.0.1/32    md5
-host    all,replication    patroni    10.0.0.2/32    md5
-host    all,replication    patroni    10.0.0.3/32    md5
-host    all,replication    patroni    127.0.0.1/32    md5
-host    all,replication    patroni    ::1/128    md5
 
-# backup:
-host    all,replication    backup    10.0.0.1/32    md5
-host    all,replication    backup    10.0.0.2/32    md5
-host    all,replication    backup    10.0.0.3/32    md5
-host    all,replication    backup    127.0.0.1/32    md5
-host    all,replication    backup    ::1/128    md5
 
-# remote users:
-host    all    +user_connect    0.0.0.0/0    md5
-host    all    +app_connect    0.0.0.0/0    md5
 
-# local users:
-local    all    all    peer
-host    all    all    127.0.0.1/32    md5
-host    all    all    ::1/128    md5
-EOF
-
+# setting up sending WAL archives 'archive-push' from node 't00node01' to node 't00backup01'
+archive_command = '/opt/pgpro/std-15/bin/pg_probackup archive-push -B /prx/t00node --instance t00backup_master --wal-file-name=%f --remote-host=t00backup01.task.locl - node_backup_master --batch-size=4  --threads=4'
 
 
 
