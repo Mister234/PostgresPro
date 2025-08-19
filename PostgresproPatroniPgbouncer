@@ -397,7 +397,7 @@ hba_file = '/u01/postgres/std-15/conf/pg_hba.conf'
 ident_file = '/u01/postgres/std-15/conf/pg_ident.conf'
 port = 5432
 # archive_command = '/opt/pgpro/std-15/bin/pg_probackup archive-push -B /u01/postgres/std-15/recovery --instance t00node - cluster_name --wal-file-name=%f --remote-host='t00node01.task.locl node_name' --batch-size=4  --threads=4'
-archive_command = '/opt/pgpro/std-15/bin/pg_probackup archive-push -B /prx/t00node --instance t00node_backup_master --wal-file-name=%f --remote-host=t00backup_master.task.locl - node_backup_master --batch-size=4  --threads=4'
+archive_command = '/opt/pgpro/std-15/bin/pg_probackup archive-push -B /prx/t00node --instance t00backup_master --wal-file-name=%f --remote-host=t00backup_master01.task.locl - node_backup_master --batch-size=4  --threads=4'
 log_directory = '/u01/postgres/std-15/log'
 
 # pg_proaudit
