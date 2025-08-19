@@ -3,7 +3,7 @@
 
 # Postgres Pro 11 — 14
  BEGIN;
- CREATE ROLE backup WITH LOGIN;
+ CREATE ROLE backup WITH LOGIN REPLICATION;
  GRANT USAGE ON SCHEMA pg_catalog TO backup;
  GRANT EXECUTE ON FUNCTION pg_catalog.current_setting(text) TO backup;
  GRANT EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) TO backup;
@@ -22,7 +22,7 @@ ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 
 # Postgres Pro 15 or new
  BEGIN;
- CREATE ROLE backup WITH LOGIN;
+ CREATE ROLE backup WITH LOGIN REPLICATION;
  GRANT USAGE ON SCHEMA pg_catalog TO backup;
  GRANT EXECUTE ON FUNCTION pg_catalog.current_setting(text) TO backup;
  GRANT EXECUTE ON FUNCTION pg_catalog.set_config(text, text, boolean) TO backup;
@@ -120,5 +120,7 @@ local    all    all    peer
 host    all    all    127.0.0.1/32    md5
 host    all    all    ::1/128    md5
 EOF
+
+
 
 
