@@ -48,8 +48,8 @@ ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 # add an instance named t00node to the backup directory
 /opt/pgpro/std-15/bin/pg_probackup add-instance -B /u01/postgres/std-15/recovery \
 -D /u01/postgres/std-15/pgdata \
---instance t00node \
---remote-host=t00node01.task.locl \
+--instance t00backup_master \
+--remote-host=t00backup_master01.task.locl \
 --remote-user=postgres \
 --remote-port=22 \
 --pguser=backup \
@@ -57,23 +57,25 @@ ALTER USER backup WITH PASSWORD 'fhjJducuJJJ331xaqQ23499VDew';
 --retention-window=7 \
 --wal-depth=3
 
+instance t00backup_master --wal-file-name=%f --remote-host=t00backup_master01.task.locl
+
 /opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
---instance t00node \
+--instance t00backup_master \
 --compress-algorithm=zlib \
 --compress-level=2 \
---remote-host=t00node01.task.locl \
+--remote-host=t00backup_master01.task.locl \
 --remote-port=22 \
 --remote-user=postgres
 
 /opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
---instance t00node \
+--instance t00backup_master \
 --archive-timeout=10min 
 
 /opt/pgpro/std-15/bin/pg_probackup set-config -B /u01/postgres/std-15/recovery \
---instance t00node \
+--instance t00backup_master \
 --pgport=5432
 
-/opt/pgpro/std-15/bin/pg_probackup show-config -B /u01/postgres/std-15/recovery --instance t00node
+/opt/pgpro/std-15/bin/pg_probackup show-config -B /u01/postgres/std-15/recovery --instance t00backup_master
 
 
 
