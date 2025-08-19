@@ -382,8 +382,10 @@ min_wal_size = 1GB
 checkpoint_completion_target = 0.9
 checkpoint_warning = 60s
 timezone = 'UTC'
-shared_preload_libraries = 'pg_stat_statements,pgpro_stats,pg_proaudit'
+shared_preload_libraries = 'pg_stat_statements,pgpro_stats,pg_proaudit,ptrack'
 temp_file_limit = 100GB
+shared_preload_libraries = 'pg_stat_statements, pgpro_stats,pg_proaudit,ptrack'
+ptrack.map_size = 10
 
 
 #------------------------------------------------------------------------------
