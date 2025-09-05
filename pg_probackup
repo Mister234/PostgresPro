@@ -19,7 +19,7 @@ rpm -i *.rpm
 sudo su - postgres
 
 # update file .pgpass for node 't00node01'
-cat <<EOF | sudo tee /u01/postgres/.pgpass
+cat <<EOF | sudo tee /var/lib/pgsql/.pgpass
 localhost:5432:*:patroni:VdlwIme388nvJsk8lLfnu223f
 localhost:5432:postgres:backup:fhjJducuJJJ331xaqQ23499VDew
 localhost:5432:replication:backup:fhjJducuJJJ331xaqQ23499VDew
@@ -174,10 +174,15 @@ sudo su - postgres
 /opt/pgpro/std-15/bin/pg_probackup add-instance -B /prx/t00node01/recovery \
 -D /u01/postgres/std-15/pgdata \
 --instance t00backup_master \
+--compress-algorithm=zlib \
+--compress-level=2 \
 --remote-host=t00node01.task.locl \
---remote-user=postgres \
 --remote-port=22 \
+--remote-user=postgres \
 --pguser=backup \
+--pgport=5432 \
+--remote-path=/opt/pgpro/std-15/bin/
+--archive-timeout=10min \
 --retention-redundancy=2 \
 --retention-window=7 \
 --wal-depth=3
@@ -217,8 +222,8 @@ ptrack.map_size = 10
 
 
 
-# setting up sending WAL archives 'archive-push' from node 't00node01' to node 't00backup01'
-archive_command = '/opt/pgpro/std-15/bin/pg_probackup archive-push -B /prx/t00node --instance t00backup_master --wal-file-name=%f --remote-host=t00backup01.task.locl - node_backup_master --batch-size=4  --threads=4'
+# setting up sending WAL archives 'archive-push' from node 't00node01' to node 't00backup01' in config postgres 'postgresql.base.conf' add mod 'archive_command'
+archive_command = '/opt/pgpro/std-15/bin/pg_probackup archive-push -B /prx/t00node01 --instance t00backup_master --wal-file-name=%f --remote-host=t00backup01.task.locl - node_backup_master --batch-size=4  --threads=4'
 
 
 
