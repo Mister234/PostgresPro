@@ -369,6 +369,10 @@ track_functions = 'all'
 # Customized config
 #------------------------------------------------------------------------------
 
+max_worker_processes = 48
+max_parallel_workers_per_gather = 4
+max_parallel_workers = 48
+mas_parallel_maintenance_workers = 4
 huge_pages = on
 shared_buffers = 180GB
 work_mem = 512MB
