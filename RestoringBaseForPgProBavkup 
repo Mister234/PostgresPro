@@ -1,1 +1,17 @@
 # Recovering at a time point
+pg_probackup-18 catchup -b FULL -j 10 -S <standbyslot-name> -P -U backup \
+  --source-pgdata=/var/lib/pgpro/data_master \
+  --destination-pgdata=/var/lib/pgpro/data_replica \
+  --remote-host=master_ip \
+  --remote-user=postgres \
+  --stream \
+  --no-vaidate
+
+
+pg_probackup-18 catchup -b DELTA -j 10 -S <standbyslot-name> -P -U backup \
+  --source-pgdata=/var/lib/pgpro/data_master \
+  --destination-pgdata=/var/lib/pgpro/data_replica \
+  --remote-host=master_ip \
+  --remote-user=postgres \
+  --stream \
+  --no-vaidate
